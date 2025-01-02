@@ -1,7 +1,7 @@
 # AlphaStar Implementation in PyTorch
 
 <p align="center">
-  <img src="assets/alphastar_logo.png" alt="AlphaStar Logo" width="200"/>
+  <img src="https://miro.medium.com/v2/resize:fit:1400/0*nGKjNfQ3KScc5uia.jpg" alt="AlphaStar Logo"/>
 </p>
 
 A comprehensive PyTorch implementation of DeepMind's AlphaStar, an AI system that achieved Grandmaster level in StarCraft II. This project reimagines the groundbreaking architecture with modern PyTorch practices, providing researchers and enthusiasts with a robust foundation for StarCraft II AI development.
