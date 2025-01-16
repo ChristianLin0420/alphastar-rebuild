@@ -140,19 +140,31 @@ class AlphaStar(nn.Module):
             Tensor of shape (batch_size, encoded_dim) containing unified representation
         """
         # Encode different input streams
-        scalar_encoded = self.scalar_encoder(inputs['scalar'])
+        scalar_encoded = self.scalar_encoder(inputs['scalar'])  # [B, scalar_dim]
+        
         entity_encoded = self.entity_encoder(
             inputs['entity'],
             masks.get('entity') if masks else None
-        )
-        spatial_encoded = self.spatial_encoder(inputs['spatial'])
+        )  # [B, num_entities, entity_dim]
+        
+        spatial_encoded = self.spatial_encoder(inputs['spatial'])  # [B, C, H, W]
+        
+        # Ensure proper dimensions before concatenating
+        entity_pooled = entity_encoded.mean(1)  # [B, entity_dim]
+        
+        # Reshape spatial features to match other encodings
+        B, C, H, W = spatial_encoded.shape
+        spatial_reshaped = spatial_encoded.permute(0, 2, 3, 1).reshape(B, H * W, C)  # [B, H*W, C]
+        spatial_pooled = spatial_reshaped.mean(1)  # [B, C]
         
         # Combine encodings
-        return torch.cat([
+        encoded = torch.cat([
             scalar_encoded,
-            entity_encoded.mean(1),  # Pool entity embeddings
-            spatial_encoded.mean([-2, -1])  # Global average pooling
+            entity_pooled,
+            spatial_pooled
         ], dim=1)
+        
+        return encoded
     
     def forward(self,
                 inputs: Dict[str, torch.Tensor],
@@ -168,8 +180,8 @@ class AlphaStar(nn.Module):
             inputs: Dictionary containing input modalities
             hidden: Optional LSTM hidden state
             masks: Optional masks for different components
-            temperature: Temperature for action sampling
-            mode: Training mode ('supervised' or 'rl')
+            temperature: Temperature for action sampling (0.0 for deterministic)
+            mode: Training mode ('supervised', 'rl', or 'inference')
             
         Returns:
             Dictionary containing:
@@ -194,16 +206,18 @@ class AlphaStar(nn.Module):
             mask=masks.get('action') if masks else None
         )
         
-        # Compute values
         outputs = {
             **action_outputs,
-            'supervised_value': self.supervised_value(core_output),
-            'baseline_value': self.baseline_value(core_output),
             'hidden': new_hidden
         }
         
-        # Add auxiliary predictions if enabled
-        if hasattr(self, 'auxiliary_heads'):
+        # Add value predictions based on mode
+        if mode in ['supervised', 'rl']:
+            outputs['supervised_value'] = self.supervised_value(core_output)
+            outputs['baseline_value'] = self.baseline_value(core_output)
+        
+        # Add auxiliary predictions if enabled and not in inference mode
+        if hasattr(self, 'auxiliary_heads') and mode != 'inference':
             outputs['auxiliary'] = {
                 name: head(core_output)
                 for name, head in self.auxiliary_heads.items()
@@ -224,33 +238,30 @@ class AlphaStar(nn.Module):
             inputs: Dictionary containing input modalities
             hidden: Optional LSTM hidden state
             masks: Optional masks for different components
-            deterministic: If True, use argmax instead of sampling
+            deterministic: If True, use temperature=0.0 for deterministic actions
             
         Returns:
             Tuple of (actions_dict, new_hidden_state)
         """
-        temperature = 0.0 if deterministic else 1.0
-        outputs = self.forward(
-            inputs,
-            hidden,
-            masks,
-            temperature=temperature,
-            mode='inference'
-        )
-        
-        actions = {}
-        new_hidden = outputs.pop('hidden')
-        
-        # Convert logits to actions
-        for key in ['action_type', 'delay', 'queued', 'selected_units',
-                   'target_unit', 'target_location']:
-            if key in outputs:
-                if key in ['delay', 'queued']:
-                    actions[key] = torch.sigmoid(outputs[key])
-                elif deterministic:
-                    actions[key] = outputs[key].argmax(dim=-1)
-                else:
-                    dist = torch.distributions.Categorical(logits=outputs[key])
-                    actions[key] = dist.sample()
-        
-        return actions, new_hidden 
+        with torch.no_grad():
+            outputs = self.forward(
+                inputs=inputs,
+                hidden=hidden,
+                masks=masks,
+                temperature=0.0 if deterministic else 1.0,
+                mode='inference'
+            )
+            
+            # Extract actions and hidden state
+            actions = {
+                'action_type': outputs['action_type'],
+                'delay': outputs['delay'],
+                'queued': outputs['queued'],
+                'selected_units': outputs['selected_units'],
+                'target_unit': outputs['target_unit'],
+                'target_location': outputs['target_location']
+            }
+            
+            new_hidden = outputs['hidden']
+            
+            return actions, new_hidden 

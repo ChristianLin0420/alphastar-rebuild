@@ -140,13 +140,15 @@ class SC2Preprocessor:
             layer = getattr(minimap, feature.name, None)
             if layer is not None:
                 if feature.type == features.FeatureType.CATEGORICAL:
-                    # One-hot encode categorical features
-                    layer = np.eye(feature.scale)[layer]
+                    # One-hot encode categorical features and flatten along the channel dimension
+                    one_hot = np.eye(feature.scale)[layer]
+                    layers.extend([one_hot[..., i] for i in range(one_hot.shape[-1])])
                 else:
                     # Normalize numerical features
                     layer = layer.astype(np.float32) / feature.scale
-                layers.append(layer)
+                    layers.append(layer)
         
+        # Stack layers along channel dimension
         spatial_tensor = torch.tensor(np.stack(layers), dtype=torch.float32)
         
         # Ensure correct spatial dimensions

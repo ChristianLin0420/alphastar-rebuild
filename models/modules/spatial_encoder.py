@@ -49,20 +49,22 @@ class SpatialEncoder(nn.Module):
         conv1 (nn.Conv2d): Initial convolution layer
         bn1 (nn.BatchNorm2d): Initial batch normalization
         res_blocks (nn.ModuleList): List of residual blocks
-        global_pool (nn.AdaptiveAvgPool2d): Global average pooling
+        global_pool (bool): Whether to apply global average pooling
         
     Input Shape:
         - x: (batch_size, input_channels, height, width)
         
     Output Shape:
-        - encoded: (batch_size, base_channels)
+        - If global_pool=True: (batch_size, base_channels)
+        - If global_pool=False: (batch_size, base_channels, height/2, width/2)
     """
     
     def __init__(self, 
                  input_channels: int,
                  base_channels: int = 64,
                  num_res_blocks: int = 4,
-                 dropout: float = 0.1):
+                 dropout: float = 0.1,
+                 global_pool: bool = True):
         """
         Initialize the SpatialEncoder.
         
@@ -71,6 +73,7 @@ class SpatialEncoder(nn.Module):
             base_channels (int): Number of base channels
             num_res_blocks (int): Number of residual blocks
             dropout (float): Dropout probability
+            global_pool (bool): Whether to apply global average pooling
         """
         super().__init__()
         
@@ -85,8 +88,7 @@ class SpatialEncoder(nn.Module):
             for _ in range(num_res_blocks)
         ])
         
-        # Global average pooling
-        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        self.global_pool = global_pool
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -96,7 +98,9 @@ class SpatialEncoder(nn.Module):
             x (torch.Tensor): Input tensor of shape (batch_size, input_channels, height, width)
             
         Returns:
-            torch.Tensor: Encoded features of shape (batch_size, base_channels)
+            torch.Tensor: Encoded features of shape:
+                - If global_pool=True: (batch_size, base_channels)
+                - If global_pool=False: (batch_size, base_channels, height/2, width/2)
             
         Raises:
             ValueError: If input tensor shape doesn't match expected dimensions
@@ -110,5 +114,7 @@ class SpatialEncoder(nn.Module):
         for res_block in self.res_blocks:
             x = res_block(x)
             
-        x = self.global_pool(x)
-        return x.flatten(1) 
+        if self.global_pool:
+            x = torch.mean(x, dim=(2, 3))  # Global average pooling
+            
+        return x 

@@ -18,7 +18,9 @@ def test_scalar_encoder_initialization(test_config):
     )
     
     assert isinstance(encoder, ScalarEncoder)
-    assert len(encoder.layers) == len(test_config['network_params']['scalar_encoder']) + 1
+    # Count number of Linear layers (one for each hidden layer plus output)
+    num_linear_layers = sum(1 for m in encoder.network if isinstance(m, torch.nn.Linear))
+    assert num_linear_layers == len(test_config['network_params']['scalar_encoder']) + 1
 
 def test_scalar_encoder_forward(test_config, mock_input_batch, device):
     """Test forward pass of scalar encoder."""
@@ -87,10 +89,11 @@ def test_scalar_encoder_activation(test_config, mock_input_batch, device):
     
     # Forward pass
     scalar_input = mock_input_batch['scalar']
-    output = encoder(scalar_input)
     
-    # ReLU properties: no negative values in hidden layers
-    for layer in encoder.layers[:-1]:  # All except last layer
-        hidden = layer(scalar_input)
-        assert (hidden >= 0).all()
-        scalar_input = hidden 
+    # Test intermediate activations
+    x = scalar_input
+    for i, layer in enumerate(encoder.network):
+        x = layer(x)
+        if isinstance(layer, torch.nn.ReLU):
+            # Check ReLU output is non-negative
+            assert (x >= 0).all(), f"ReLU output contains negative values at layer {i}" 

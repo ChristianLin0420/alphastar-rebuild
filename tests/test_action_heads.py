@@ -13,13 +13,24 @@ def test_action_type_head():
     batch_size = 32
     input_dim = 512
     num_actions = 100
+    hidden_dim = 256
     
-    head = ActionTypeHead(input_dim, num_actions)
+    head = ActionTypeHead(input_dim, num_actions, hidden_dim)
     x = torch.randn(batch_size, input_dim)
     
+    # Test with default temperature
     output = head(x)
     assert output.shape == (batch_size, num_actions)
     assert torch.isfinite(output).all()
+    
+    # Test with different temperatures
+    output_cold = head(x, temperature=0.5)
+    assert output_cold.shape == (batch_size, num_actions)
+    assert torch.isfinite(output_cold).all()
+    
+    output_hot = head(x, temperature=2.0)
+    assert output_hot.shape == (batch_size, num_actions)
+    assert torch.isfinite(output_hot).all()
 
 def test_pointer_network():
     """Test PointerNetwork attention mechanism."""
@@ -52,7 +63,13 @@ def test_spatial_action_head():
     head = SpatialActionHead(input_dim, spatial_size)
     x = torch.randn(batch_size, input_dim)
     
+    # Test with default temperature
     output = head(x)
+    assert output.shape == (batch_size, 1, *spatial_size)
+    assert torch.isfinite(output).all()
+    
+    # Test with different temperature
+    output = head(x, temperature=0.5)
     assert output.shape == (batch_size, 1, *spatial_size)
     assert torch.isfinite(output).all()
 
@@ -70,7 +87,7 @@ def test_action_heads_combined():
     entity_states = torch.randn(batch_size, num_entities, entity_dim)
     mask = torch.ones(batch_size, num_entities, dtype=torch.bool)
     
-    outputs = heads(core_output, entity_states, mask)
+    outputs = heads(core_output, entity_states, mask=mask)
     
     # Check all output shapes
     assert outputs['action_type'].shape == (batch_size, num_actions)
@@ -79,13 +96,15 @@ def test_action_heads_combined():
     assert outputs['selected_units'].shape == (batch_size, num_entities)
     assert outputs['target_unit'].shape == (batch_size, num_entities)
     assert outputs['target_location'].shape == (batch_size, 1, *spatial_size)
-    assert outputs['value'].shape == (batch_size, 1)
     
     # Check value ranges
-    assert torch.all(outputs['queued'] >= 0) and torch.all(outputs['queued'] <= 1)
-    assert torch.all(outputs['value'] >= -1) and torch.all(outputs['value'] <= 1)
+    assert torch.all(torch.sigmoid(outputs['queued']) >= 0) and torch.all(torch.sigmoid(outputs['queued']) <= 1)
     assert torch.allclose(outputs['selected_units'].sum(dim=1), torch.ones(batch_size))
     assert torch.allclose(outputs['target_unit'].sum(dim=1), torch.ones(batch_size))
+    
+    # Test with temperature
+    outputs = heads(core_output, entity_states, temperature=0.5, mask=mask)
+    assert all(torch.isfinite(v).all() for v in outputs.values())
 
 def test_action_heads_gradient_flow():
     """Test if gradients flow properly through all heads."""

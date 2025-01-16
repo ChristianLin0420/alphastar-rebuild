@@ -47,6 +47,7 @@ class EntityEncoder(nn.Module):
         input_projection (nn.Linear): Projects entity features to transformer dimension
         transformer_layers (nn.ModuleList): List of transformer layers
         output_projection (nn.Linear): Projects final output to desired dimension
+        last_output (torch.Tensor): Last computed output, used by action heads
         
     Input Shape:
         - entities: (batch_size, num_entities, input_dim)
@@ -91,6 +92,8 @@ class EntityEncoder(nn.Module):
             nn.LayerNorm(d_model)
         )
         
+        self.last_output = None
+        
     def forward(self, 
                 entities: torch.Tensor, 
                 mask: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -123,4 +126,7 @@ class EntityEncoder(nn.Module):
         # Return to original shape: (batch_size, num_entities, d_model)
         x = x.transpose(0, 1)
         
-        return self.output_projection(x) 
+        # Store output for action heads
+        self.last_output = self.output_projection(x)
+        
+        return self.last_output 

@@ -9,32 +9,40 @@ from configs.training_config import TrainingConfig
 class MockObs:
     """Mock SC2 observation for testing."""
     def __init__(self):
-        self.player = Mock(
-            minerals=1000,
-            vespene=500,
-            food_used=100,
-            food_cap=200,
-            army_count=50,
-            worker_count=30
-        )
+        # Create a mock player object with numeric attributes
+        class Player:
+            def __init__(self):
+                self.minerals = 1000
+                self.vespene = 500
+                self.food_used = 100
+                self.food_cap = 200
+                self.army_count = 50
+                self.worker_count = 30
         
-        self.feature_units = [
-            Mock(
-                unit_type=1,
-                alliance=1,
-                health=100,
-                shield=50,
-                energy=200,
-                x=10,
-                y=20,
-                is_selected=1
-            )
-            for _ in range(10)
-        ]
+        self.player = Player()
         
-        self.feature_minimap = Mock()
-        for feature in ['height_map', 'visibility_map', 'player_relative']:
-            setattr(self.feature_minimap, feature, np.random.rand(64, 64))
+        # Create mock units with numeric attributes
+        class Unit:
+            def __init__(self):
+                self.unit_type = 1
+                self.alliance = 1
+                self.health = 100
+                self.shield = 50
+                self.energy = 200
+                self.x = 10
+                self.y = 20
+                self.is_selected = 1
+        
+        self.feature_units = [Unit() for _ in range(10)]
+        
+        # Create mock minimap with numpy arrays
+        class FeatureMinimap:
+            def __init__(self):
+                self.height_map = np.zeros((64, 64), dtype=np.int32)
+                self.visibility_map = np.ones((64, 64), dtype=np.int32)
+                self.player_relative = np.ones((64, 64), dtype=np.int32)
+        
+        self.feature_minimap = FeatureMinimap()
 
 def test_scalar_feature_extraction():
     """Test scalar feature extraction and normalization."""
