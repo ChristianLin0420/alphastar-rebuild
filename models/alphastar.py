@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Optional, Tuple
+import torch.nn.functional as F
+from typing import Dict, Optional, Tuple, List, Union
 
 from .scalar_encoder import ScalarEncoder
 from .entity_encoder import EntityEncoder
@@ -10,202 +11,244 @@ from .action_heads import ActionHeads
 
 class AlphaStar(nn.Module):
     """
-    Complete AlphaStar architecture combining all components.
+    Complete AlphaStar architecture combining supervised learning and reinforcement learning components.
     
-    Attributes:
-        scalar_encoder: Encodes scalar features
-        entity_encoder: Encodes entity features
-        spatial_encoder: Encodes spatial features
-        core: LSTM core for temporal processing
-        action_heads: Various action prediction heads
-        
-    Input Format:
-        Dictionary containing:
-        - scalar_input: (batch_size, scalar_input_dim)
-        - entity_input: (batch_size, max_entities, entity_input_dim)
-        - spatial_input: (batch_size, channels, height, width)
-        - entity_mask: (batch_size, max_entities)
-        
-    Output Format:
-        Dictionary containing:
-        - action_type: (batch_size, num_actions)
-        - delay: (batch_size, 1)
-        - queued: (batch_size, 1)
-        - selected_units: (batch_size, max_entities)
-        - target_unit: (batch_size, max_entities)
-        - target_location: (batch_size, 1, height, width)
-        - value: (batch_size, 1)
+    The model consists of:
+    1. Feature extractors for different input modalities
+    2. LSTM core for temporal processing
+    3. Auto-regressive policy heads for action selection
+    4. Value heads for both supervised and RL training
+    5. Auxiliary prediction heads for enhanced learning
+    
+    Key Components:
+    - Scalar features: Game statistics, resources, etc.
+    - Entity features: Units, buildings, etc. processed by transformer
+    - Spatial features: Map information processed by ResNet
+    - LSTM core: Temporal dependencies and memory
+    - Action heads: Auto-regressive policy for complex action space
+    - Value heads: State-value estimation and baseline functions
+    
+    Training Modes:
+    - Supervised Learning: Learning from human demonstrations
+    - Reinforcement Learning: Self-play and league training
+    - Auxiliary Tasks: Additional supervision signals
     """
     
-    def __init__(self, config):
+    def __init__(self, config: Dict):
         """
         Initialize AlphaStar model.
         
         Args:
-            config: Training configuration object containing model parameters
+            config: Configuration dictionary containing:
+                - input_dims: Dimensions for different input modalities
+                - network_params: Architecture parameters (hidden dims, layers, etc.)
+                - action_space: Action space configuration
+                - training_params: Parameters for different training modes
         """
         super().__init__()
         
         # Feature encoders
         self.scalar_encoder = ScalarEncoder(
-            input_dim=config.SCALAR_INPUT_DIM,
-            hidden_dims=[256, 256],
-            output_dim=256
+            input_dim=config['input_dims']['scalar'],
+            hidden_dims=config['network_params']['scalar_encoder'],
+            output_dim=config['network_params']['encoder_output']
         )
         
         self.entity_encoder = EntityEncoder(
-            input_dim=config.ENTITY_INPUT_DIM,
-            d_model=256,
-            num_heads=config.TRANSFORMER_NUM_HEADS,
-            num_layers=config.TRANSFORMER_NUM_LAYERS
+            input_dim=config['input_dims']['entity'],
+            d_model=config['network_params']['transformer_dim'],
+            num_heads=config['network_params']['transformer_heads'],
+            num_layers=config['network_params']['transformer_layers'],
+            dropout=config['network_params']['dropout']
         )
         
         self.spatial_encoder = SpatialEncoder(
-            input_channels=config.SPATIAL_INPUT_CHANNELS,
-            base_channels=64,
-            num_res_blocks=4
+            input_channels=config['input_dims']['spatial'],
+            base_channels=config['network_params']['spatial_channels'],
+            num_res_blocks=config['network_params']['num_res_blocks']
         )
         
         # Calculate total encoded dimension
-        encoded_dim = 256 + 256 + 64  # Scalar + Entity + Spatial
+        self.encoded_dim = (
+            config['network_params']['encoder_output'] +  # Scalar
+            config['network_params']['transformer_dim'] +  # Entity
+            config['network_params']['spatial_channels']   # Spatial
+        )
         
         # Core LSTM
         self.core = AlphaStarCore(
-            input_dim=encoded_dim,
-            hidden_dim=config.LSTM_HIDDEN_DIM,
-            num_layers=config.LSTM_NUM_LAYERS
+            input_dim=self.encoded_dim,
+            hidden_dim=config['network_params']['lstm_dim'],
+            num_layers=config['network_params']['lstm_layers'],
+            dropout=config['network_params']['dropout']
         )
         
-        # Action heads
+        # Action heads for auto-regressive policy
         self.action_heads = ActionHeads(
-            core_dim=config.LSTM_HIDDEN_DIM,
-            entity_dim=config.ENTITY_INPUT_DIM,
-            num_actions=config.NUM_ACTIONS,
-            spatial_size=config.SPATIAL_SIZE
+            core_dim=config['network_params']['lstm_dim'],
+            entity_dim=config['input_dims']['entity'],
+            num_actions=config['action_space']['num_actions'],
+            spatial_size=config['action_space']['spatial_size']
         )
         
-        # Save config for validation
+        # Value heads
+        self.supervised_value = nn.Sequential(
+            nn.Linear(config['network_params']['lstm_dim'], 256),
+            nn.ReLU(),
+            nn.Linear(256, 1)
+        )
+        
+        self.baseline_value = nn.Sequential(
+            nn.Linear(config['network_params']['lstm_dim'], 256),
+            nn.ReLU(),
+            nn.Linear(256, 1)
+        )
+        
+        # Auxiliary prediction heads
+        if config['training_params'].get('use_auxiliary', False):
+            self.build_auxiliary_heads(config)
+        
         self.config = config
+    
+    def build_auxiliary_heads(self, config: Dict):
+        """Build auxiliary prediction heads for additional supervision."""
+        self.auxiliary_heads = nn.ModuleDict({
+            'build_order': nn.Linear(
+                config['network_params']['lstm_dim'],
+                config['action_space']['build_order_size']
+            ),
+            'unit_counts': nn.Linear(
+                config['network_params']['lstm_dim'],
+                config['action_space']['unit_type_size']
+            )
+        })
+    
+    def encode_inputs(self, 
+                     inputs: Dict[str, torch.Tensor],
+                     masks: Optional[Dict[str, torch.Tensor]] = None
+                    ) -> torch.Tensor:
+        """
+        Encode different input modalities into a unified representation.
         
-    def _validate_input(self, model_input: Dict[str, torch.Tensor]):
-        """Validate input tensors."""
-        assert 'scalar_input' in model_input, "Missing scalar_input"
-        assert 'entity_input' in model_input, "Missing entity_input"
-        assert 'spatial_input' in model_input, "Missing spatial_input"
+        Args:
+            inputs: Dictionary containing different input modalities
+            masks: Optional masks for different input types
+            
+        Returns:
+            Tensor of shape (batch_size, encoded_dim) containing unified representation
+        """
+        # Encode different input streams
+        scalar_encoded = self.scalar_encoder(inputs['scalar'])
+        entity_encoded = self.entity_encoder(
+            inputs['entity'],
+            masks.get('entity') if masks else None
+        )
+        spatial_encoded = self.spatial_encoder(inputs['spatial'])
         
-        scalar_input = model_input['scalar_input']
-        entity_input = model_input['entity_input']
-        spatial_input = model_input['spatial_input']
-        
-        assert scalar_input.dim() == 2, f"Expected 2D scalar_input, got shape {scalar_input.shape}"
-        assert entity_input.dim() == 3, f"Expected 3D entity_input, got shape {entity_input.shape}"
-        assert spatial_input.dim() == 4, f"Expected 4D spatial_input, got shape {spatial_input.shape}"
-        
-        assert scalar_input.size(1) == self.config.SCALAR_INPUT_DIM
-        assert entity_input.size(2) == self.config.ENTITY_INPUT_DIM
-        assert spatial_input.size(1) == self.config.SPATIAL_INPUT_CHANNELS
-        assert spatial_input.shape[2:] == self.config.SPATIAL_SIZE
-        
-    def forward(self, 
-                model_input: Dict[str, torch.Tensor],
-                hidden: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        # Combine encodings
+        return torch.cat([
+            scalar_encoded,
+            entity_encoded.mean(1),  # Pool entity embeddings
+            spatial_encoded.mean([-2, -1])  # Global average pooling
+        ], dim=1)
+    
+    def forward(self,
+                inputs: Dict[str, torch.Tensor],
+                hidden: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+                masks: Optional[Dict[str, torch.Tensor]] = None,
+                temperature: float = 1.0,
+                mode: str = 'supervised'
                ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of the AlphaStar model.
         
         Args:
-            model_input: Dictionary containing input tensors
+            inputs: Dictionary containing input modalities
             hidden: Optional LSTM hidden state
+            masks: Optional masks for different components
+            temperature: Temperature for action sampling
+            mode: Training mode ('supervised' or 'rl')
             
         Returns:
-            Dictionary containing action predictions and value
+            Dictionary containing:
+            - action_logits: Raw action logits
+            - actions: Sampled actions
+            - values: State value estimates
+            - auxiliary: Optional auxiliary predictions
+            - hidden: New LSTM hidden state
         """
-        # Validate input
-        self._validate_input(model_input)
-        
-        # Extract inputs
-        scalar_input = model_input['scalar_input']
-        entity_input = model_input['entity_input']
-        spatial_input = model_input['spatial_input']
-        entity_mask = model_input.get('entity_mask')
-        
         # Encode inputs
-        scalar_encoded = self.scalar_encoder(scalar_input)
-        entity_encoded = self.entity_encoder(entity_input, entity_mask)
-        spatial_encoded = self.spatial_encoder(spatial_input)
+        encoded = self.encode_inputs(inputs, masks)
         
-        # Concatenate encoded features
-        encoded = torch.cat([
-            scalar_encoded,
-            entity_encoded.mean(1),  # Average over entities
-            spatial_encoded
-        ], dim=1)
-        
-        # Process through core LSTM
+        # Process through LSTM core
         core_output, new_hidden = self.core(encoded.unsqueeze(1), hidden)
         core_output = core_output.squeeze(1)
         
         # Generate action predictions
         action_outputs = self.action_heads(
             core_output=core_output,
-            entity_states=entity_encoded,
-            mask=entity_mask
+            entity_states=self.entity_encoder.last_output,
+            temperature=temperature,
+            mask=masks.get('action') if masks else None
         )
         
-        # Add hidden state to outputs
-        action_outputs['hidden'] = new_hidden
+        # Compute values
+        outputs = {
+            **action_outputs,
+            'supervised_value': self.supervised_value(core_output),
+            'baseline_value': self.baseline_value(core_output),
+            'hidden': new_hidden
+        }
         
-        return action_outputs
+        # Add auxiliary predictions if enabled
+        if hasattr(self, 'auxiliary_heads'):
+            outputs['auxiliary'] = {
+                name: head(core_output)
+                for name, head in self.auxiliary_heads.items()
+            }
+        
+        return outputs
     
-    def get_action(self, 
-                   model_input: Dict[str, torch.Tensor],
+    def get_action(self,
+                   inputs: Dict[str, torch.Tensor],
                    hidden: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+                   masks: Optional[Dict[str, torch.Tensor]] = None,
                    deterministic: bool = False
                   ) -> Tuple[Dict[str, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
         """
-        Get action for inference/evaluation.
+        Get actions for inference/evaluation.
         
         Args:
-            model_input: Dictionary containing input tensors
+            inputs: Dictionary containing input modalities
             hidden: Optional LSTM hidden state
+            masks: Optional masks for different components
             deterministic: If True, use argmax instead of sampling
             
         Returns:
-            Tuple of (action_dict, new_hidden)
+            Tuple of (actions_dict, new_hidden_state)
         """
-        outputs = self.forward(model_input, hidden)
+        temperature = 0.0 if deterministic else 1.0
+        outputs = self.forward(
+            inputs,
+            hidden,
+            masks,
+            temperature=temperature,
+            mode='inference'
+        )
+        
+        actions = {}
         new_hidden = outputs.pop('hidden')
         
         # Convert logits to actions
-        actions = {}
-        
-        # Action type
-        if deterministic:
-            actions['action_type'] = outputs['action_type'].argmax(dim=-1)
-        else:
-            dist = torch.distributions.Categorical(logits=outputs['action_type'])
-            actions['action_type'] = dist.sample()
-        
-        # Delay and queued
-        actions['delay'] = outputs['delay']
-        actions['queued'] = (outputs['queued'] > 0.5).float()
-        
-        # Selected units and target unit
-        actions['selected_units'] = outputs['selected_units'].argmax(dim=-1)
-        actions['target_unit'] = outputs['target_unit'].argmax(dim=-1)
-        
-        # Target location
-        target_loc = outputs['target_location'].view(outputs['target_location'].size(0), -1)
-        if deterministic:
-            target_idx = target_loc.argmax(dim=-1)
-        else:
-            dist = torch.distributions.Categorical(logits=target_loc)
-            target_idx = dist.sample()
-        
-        h, w = self.config.SPATIAL_SIZE
-        actions['target_location'] = torch.stack([
-            target_idx % w,
-            target_idx // w
-        ], dim=-1)
+        for key in ['action_type', 'delay', 'queued', 'selected_units',
+                   'target_unit', 'target_location']:
+            if key in outputs:
+                if key in ['delay', 'queued']:
+                    actions[key] = torch.sigmoid(outputs[key])
+                elif deterministic:
+                    actions[key] = outputs[key].argmax(dim=-1)
+                else:
+                    dist = torch.distributions.Categorical(logits=outputs[key])
+                    actions[key] = dist.sample()
         
         return actions, new_hidden 

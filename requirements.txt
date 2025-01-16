@@ -1,0 +1,44 @@
+# Deep Learning Framework
+torch>=2.0.0
+torchvision>=0.15.0
+
+# StarCraft II Environment
+pysc2>=4.0.0
+s2clientprotocol>=5.0.11
+gym>=0.26.0
+
+# Machine Learning Utils
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+scikit-learn>=1.2.0
+
+# Training and Monitoring
+wandb>=0.15.0
+tensorboard>=2.13.0
+tqdm>=4.65.0
+
+# Data Processing
+h5py>=3.8.0
+pyarrow>=12.0.0
+msgpack>=1.0.5
+
+# Utilities
+PyYAML>=6.0
+python-dotenv>=1.0.0
+click>=8.1.0
+rich>=13.0.0
+
+# Testing
+pytest>=7.3.0
+pytest-cov>=4.1.0
+
+# Development Tools
+black>=23.3.0
+isort>=5.12.0
+flake8>=6.0.0
+mypy>=1.3.0
+
+# Optional: Performance Optimization
+numba>=0.57.0
+# cupy-cuda11x>=12.0.0  # Only if using NVIDIA GPU with CUDA 11.x 
