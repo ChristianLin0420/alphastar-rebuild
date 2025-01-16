@@ -3,11 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, Optional, Tuple, List, Union
 
-from .scalar_encoder import ScalarEncoder
-from .entity_encoder import EntityEncoder
-from .spatial_encoder import SpatialEncoder
-from .core import AlphaStarCore
-from .action_heads import ActionHeads
+from .modules import (
+    ScalarEncoder,
+    EntityEncoder,
+    SpatialEncoder,
+    AlphaStarCore,
+    ActionHeads
+)
 
 class AlphaStar(nn.Module):
     """
