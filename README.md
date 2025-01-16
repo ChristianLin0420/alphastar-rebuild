@@ -1,268 +1,345 @@
 # AlphaStar Implementation in PyTorch
 
-<p align="center">
-  <img src="https://miro.medium.com/v2/resize:fit:1400/0*nGKjNfQ3KScc5uia.jpg" alt="AlphaStar Logo"/>
-</p>
+A PyTorch implementation of DeepMind's AlphaStar, an AI system for playing StarCraft II. This project focuses on reimplementing the core neural network architecture and training pipeline, with an emphasis on modularity, testability, and research extensibility.
 
-A comprehensive PyTorch implementation of DeepMind's AlphaStar, an AI system that achieved Grandmaster level in StarCraft II. This project reimagines the groundbreaking architecture with modern PyTorch practices, providing researchers and enthusiasts with a robust foundation for StarCraft II AI development.
+## 🎯 Introduction
+
+AlphaStar is a groundbreaking AI system that achieved Grandmaster level in StarCraft II, a complex real-time strategy game. This implementation focuses on:
+
+- **Neural Architecture**: A faithful reproduction of the core AlphaStar architecture, including:
+  - Multi-modal feature processing (scalar, entity, spatial)
+  - Transformer-based entity processing
+  - LSTM-based temporal reasoning
+  - Auto-regressive action generation
+
+- **Training Pipeline**: Support for both supervised and reinforcement learning:
+  - Supervised learning from demonstration data
+  - Reinforcement learning with PPO
+  - Prioritized experience replay
+  - League training infrastructure
+
+- **Research Focus**: Built for AI research with:
+  - Modular component design
+  - Comprehensive test coverage
+  - Configurable architecture
+  - Detailed logging and monitoring
+
+- **Quality Assurance**: Emphasis on code quality through:
+  - Extensive unit tests
+  - Integration tests
+  - Type hints
+  - Documentation
 
 ## 🌟 Overview
 
-This implementation brings together several cutting-edge components:
+This implementation includes:
 
-- **Neural Architecture**: Complete reproduction of the AlphaStar neural network architecture
-- **Learning Pipeline**: Both supervised learning from human replays and reinforcement learning
-- **Battle-tested Components**: Thoroughly validated implementation of key mechanisms
-- **Research Ready**: Modular design enabling easy experimentation and extension
-- **Production Quality**: Comprehensive testing, logging, and visualization tools
+- **Neural Architecture**: Core AlphaStar neural network components
+- **Training Pipeline**: Both supervised and reinforcement learning capabilities
+- **Modular Design**: Easily extensible architecture for research
+- **Testing Framework**: Comprehensive test suite for all components
 
 ## 🏗️ Project Structure
 
-Our codebase is organized for clarity and maintainability:
-
 ```
-alphastar/
+alphastar-rebuild/
 ├── configs/
-│   └── training_config.py    # Centralized configuration management
-├── data/
-│   ├── datamodule.py        # Efficient data pipeline handling
-│   └── preprocessor.py      # StarCraft II state processing
+│   ├── default.yaml         # Default configuration
+│   ├── config.py           # Configuration loading utilities
+│   └── training_config.py  # Training parameters
 ├── models/
-│   ├── action_heads.py      # Strategic decision making
-│   ├── alphastar.py        # Core architecture integration
-│   ├── core.py             # Temporal reasoning module
-│   ├── entity_encoder.py   # Unit and building processing
-│   ├── scalar_encoder.py   # Game state analysis
-│   └── spatial_encoder.py  # Tactical map understanding
+│   ├── modules/
+│   │   ├── action_heads.py    # Action selection components
+│   │   ├── core.py           # LSTM-based temporal processing
+│   │   ├── entity_encoder.py # Entity feature processing
+│   │   ├── scalar_encoder.py # Scalar feature processing
+│   │   └── spatial_encoder.py # Spatial feature processing
+│   └── alphastar.py        # Main model architecture
+├── train/
+│   └── train.py           # Training loop implementation
 ├── utils/
-│   ├── checkpointing.py    # Training state management
-│   ├── logger.py          # Comprehensive metric tracking
-│   └── validation.py      # Input safeguarding
-├── tests/                 # Quality assurance
+│   ├── replay_buffer.py   # Experience replay implementations
+│   └── checkpointing.py   # Model checkpointing
+├── tests/                 # Comprehensive test suite
+│   ├── test_action_heads.py
+│   ├── test_alphastar.py
+│   ├── test_core.py
+│   ├── test_entity_encoder.py
+│   ├── test_preprocessor.py
+│   ├── test_scalar_encoder.py
+│   └── test_spatial_encoder.py
 └── scripts/
-    └── train_alphastar.py # Training orchestration
+    ├── train_alphastar.py # Training script
+    └── run_tests.py       # Test runner
 ```
+
+## 🧠 Model Architecture
+
+### Core Components
+
+1. **Feature Encoders**
+   - **Scalar Encoder**: Processes global game state features
+   - **Entity Encoder**: Transformer-based unit processing
+   - **Spatial Encoder**: Processes map information using ResNet blocks
+
+2. **Core Processing**
+   - LSTM-based temporal processing
+   - State tracking and memory management
+   - Integration of different feature streams
+
+3. **Action Generation**
+   - **Action Type Head**: Selects action categories
+   - **Pointer Network**: Unit selection mechanism
+   - **Spatial Action Head**: Location-based actions
+   - **Value Head**: State value estimation
+
+### Key Features
+
+- Multi-head attention for entity processing
+- Residual connections in spatial processing
+- Auto-regressive action selection
+- Prioritized experience replay
+- Both supervised and reinforcement learning support
 
 ## 🛠️ Requirements
 
-### Core Dependencies
-Carefully selected versions ensuring compatibility and performance:
 ```
-torch>=1.9.0      # Deep learning framework
-pysc2>=3.0.0      # StarCraft II interface
-numpy>=1.19.0     # Numerical computations
-wandb>=0.15.0     # Experiment tracking
-tqdm>=4.60.0      # Progress tracking
-pytest>=6.2.0     # Testing framework
+# Core Dependencies
+torch>=2.0.0
+numpy>=1.24.0
+pytest>=7.3.0
+pytest-cov>=4.1.0
+wandb>=0.15.0
+pyyaml>=6.0
+protobuf<=3.20.0
+pysc2>=3.0.0
 ```
-
-### System Requirements
-Recommended specifications for optimal training performance:
-- 🖥️ CUDA-capable GPU (RTX 3080 or better recommended)
-- 💾 32GB RAM (minimum for large-scale training)
-- 💽 100GB SSD space (for game installation and replay data)
 
 ## 🚀 Installation
 
-Follow these steps to set up your development environment:
-
 1. **Clone Repository**
    ```bash
-   git clone https://github.com/yourusername/alphastar-pytorch.git
-   cd alphastar-pytorch
+   git clone https://github.com/yourusername/alphastar-rebuild.git
+   cd alphastar-rebuild
    ```
 
-2. **Install Dependencies**
+2. **Create Virtual Environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Install StarCraft II**
-   ```bash
-   bash scripts/install_sc2.sh
-   python -m pysc2.bin.download_maps
-   ```
+## 🧪 Testing Framework
 
-## 🧠 Model Architecture
+The project includes a comprehensive testing suite covering all components:
 
-Our implementation features three main processing stages:
+### Test Structure
 
-### 1. Input Processing
-- **Scalar Encoder**: Processes global game state features
-  - Resource management
-  - Population metrics
-  - Game progression indicators
-- **Entity Encoder**: Transformer-based unit analysis
-  - Unit type embedding
-  - Positional encoding
-  - Multi-head attention
-- **Spatial Encoder**: ResNet-based map understanding
-  - Terrain analysis
-  - Resource location processing
-  - Unit positioning
-
-### 2. Core Processing
-- **LSTM-based Integration**
-  - Temporal state tracking
-  - Strategic planning
-  - Memory management
-- **Advanced Features**
-  - Layer normalization for stable training
-  - Residual connections for deep network training
-  - Dropout for regularization
-
-### 3. Action Generation
-- **Strategic Decision Making**
-  - Action type selection
-  - Unit selection via pointer network
-  - Target location prediction
-  - Value estimation for policy improvement
-
-## 🎮 Usage
-
-### Training Pipeline
-
-1. **Basic Training**
-   ```bash
-   python -m scripts.train_alphastar
-   ```
-
-2. **Resume Training**
-   ```bash
-   python -m scripts.train_alphastar --resume checkpoints/alphastar_step_1000.pt
-   ```
-
-3. **Custom Configuration**
-   ```bash
-   python -m scripts.train_alphastar --config configs/custom_config.yaml
-   ```
-
-### Model Evaluation
-```bash
-# Evaluate the best model
-python -m scripts.train_alphastar --evaluate checkpoints/alphastar_best.pt
-
-# Evaluate with custom settings
-python -m scripts.train_alphastar --evaluate checkpoints/model.pt --num-games 100
+```
+tests/
+├── conftest.py              # Shared test fixtures
+├── test_action_heads.py     # Action selection tests
+├── test_alphastar.py       # Full model integration tests
+├── test_core.py            # LSTM processing tests
+├── test_entity_encoder.py  # Entity processing tests
+├── test_preprocessor.py    # Input preprocessing tests
+├── test_scalar_encoder.py  # Scalar feature tests
+└── test_spatial_encoder.py # Spatial feature tests
 ```
 
-### Monitoring Training
+### Test Categories
 
-Training progress is tracked using Weights & Biases (wandb):
-```bash
-# Basic training with wandb logging
-python -m scripts.train_alphastar --wandb-project alphastar
+1. **Unit Tests**
+   - Individual component functionality
+   - Input/output shapes
+   - Value ranges and constraints
+   - Edge cases
 
-# Specify wandb entity and run name
-python -m scripts.train_alphastar --wandb-project alphastar --wandb-entity your-username --wandb-run-name experiment-1
-```
+2. **Integration Tests**
+   - Component interactions
+   - Full model forward/backward passes
+   - Training loop functionality
+   - Configuration loading
 
-Key metrics tracked:
-- Loss curves (policy, value, auxiliary tasks)
-- Action distributions
-- Win rates
-- Resource management statistics
-- Unit production patterns
-- Model architecture visualization
-- Training hyperparameters
-- System metrics (GPU usage, memory)
-
-### Configuration
-
-Fine-tune your training with these key parameters:
-
-```python
-# Architecture Configuration
-SCALAR_INPUT_DIM = 9        # Game state features
-ENTITY_INPUT_DIM = 10       # Unit properties
-SPATIAL_INPUT_CHANNELS = 32 # Map information
-NUM_ACTIONS = 1000          # Action space size
-
-# Training Hyperparameters
-BATCH_SIZE = 512           # Training batch size
-LEARNING_RATE = 3e-4       # Adam optimizer LR
-NUM_EPOCHS = 100          # Training duration
-GRADIENT_CLIP = 1.0       # Gradient stability
-
-# PPO Hyperparameters
-PPO_CLIP = 0.2           # Policy update constraint
-VALUE_LOSS_COEF = 0.5    # Value function weight
-ENTROPY_COEF = 0.01      # Exploration promotion
-```
-
-## Development
+3. **Property Tests**
+   - Gradient flow
+   - Memory usage
+   - Numerical stability
+   - Batch size handling
 
 ### Running Tests
+
 ```bash
-pytest tests/
+# Basic test execution
+python scripts/run_tests.py
+
+# Test with options
+python scripts/run_tests.py [options]
+
+Options:
+  --verbose, -v         Enable verbose output
+  --coverage, -c        Generate coverage report
+  --html               Generate HTML coverage report
+  --test-path          Path to test directory (default: tests)
+  --pattern            Pattern to match test files (default: test_*)
+  --workers, -n        Number of workers for parallel execution
 ```
 
-### Code Style
-- Follow PEP 8 guidelines
-- Use type hints
-- Document all public functions and classes
-
-### Monitoring
-
-Launch TensorBoard:
+Example Usage:
 ```bash
-tensorboard --logdir logs/
+# Run specific test file
+python scripts/run_tests.py --pattern "test_action_heads.py"
+
+# Run with coverage and HTML report
+python scripts/run_tests.py --coverage --html
+
+# Run in parallel with 4 workers
+python scripts/run_tests.py --workers 4
 ```
 
-Available metrics:
-- Training loss curves
-- Action distribution
-- Value predictions
-- Learning rate
-- Gradient norms
+## 🎮 Training Arguments
 
-## Contributing
+The training script (`scripts/train_alphastar.py`) supports various arguments for customization:
+
+```bash
+python scripts/train_alphastar.py [options]
+
+Required Arguments:
+  --config              Path to YAML configuration file
+
+Optional Arguments:
+  --checkpoint         Path to checkpoint to resume from
+  --mode              Training mode: 'supervised' or 'reinforcement'
+  --wandb-project     Weights & Biases project name
+  --wandb-entity      Weights & Biases username/team
+  --wandb-run-name    Weights & Biases run name
+  --device            Device to train on (cuda/cpu)
+  --debug             Enable debug logging
+```
+
+Example Usage:
+```bash
+# Basic supervised training
+python scripts/train_alphastar.py \
+  --config configs/default.yaml \
+  --mode supervised
+
+# Resume training from checkpoint
+python scripts/train_alphastar.py \
+  --config configs/default.yaml \
+  --checkpoint checkpoints/model_1000.pt \
+  --mode reinforcement
+
+# Training with W&B logging
+python scripts/train_alphastar.py \
+  --config configs/default.yaml \
+  --wandb-project alphastar \
+  --wandb-entity your-username \
+  --wandb-run-name experiment-1
+```
+
+## 📊 Monitoring and Logging
+
+The training process can be monitored through various means:
+
+### Weights & Biases Integration
+```bash
+# Enable W&B logging
+python scripts/train_alphastar.py \
+  --config configs/default.yaml \
+  --wandb-project alphastar
+```
+
+Tracked Metrics:
+- Loss curves (policy, value, auxiliary)
+- Action distributions
+- Network gradients
+- Resource usage
+- Model architecture
+- Hyperparameters
+
+### Console Logging
+The training script provides detailed console output:
+```
+[INFO] Epoch 1/100
+[INFO] Training loss: 2.345
+[INFO] Validation win rate: 0.456
+[INFO] Saving checkpoint: model_1000.pt
+```
+
+## 🔧 Configuration
+
+The project uses a hierarchical configuration system:
+
+### Training Configuration (training_config.py)
+```python
+# Model dimensions
+SCALAR_INPUT_DIM = 32
+ENTITY_INPUT_DIM = 64
+SPATIAL_INPUT_DIM = 16
+MAX_ENTITIES = 100
+SPATIAL_SIZE = (64, 64)
+
+# Network parameters
+TRANSFORMER_DIM = 64
+TRANSFORMER_HEADS = 2
+TRANSFORMER_LAYERS = 2
+LSTM_DIM = 128
+LSTM_LAYERS = 2
+
+# Training parameters
+BATCH_SIZE = 32
+LEARNING_RATE = 1e-4
+```
+
+### Default Configuration (default.yaml)
+Includes comprehensive settings for:
+- Input dimensions
+- Network architecture
+- Action space configuration
+- Training parameters
+- RL parameters
+- League training settings
+- Environment configuration
+
+## 🧪 Testing
+
+The project includes extensive tests for all components:
+
+- **Action Heads**: Tests for action selection mechanisms
+- **Core Processing**: LSTM and temporal processing tests
+- **Encoders**: Tests for all feature encoders
+- **Full Model**: Integration tests for the complete architecture
+
+## 📈 Future Work
+
+- [ ] Complete SC2 environment integration
+- [ ] Implement league training
+- [ ] Add model visualization tools
+- [ ] Expand test coverage
+- [ ] Add performance benchmarks
+- [ ] Implement distributed training
+
+## 📝 License
+
+This project is licensed under the MIT License.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch
-3. Implement your changes
-4. Add/update tests
-5. Submit a pull request
+3. Add tests for new features
+4. Submit a pull request
 
-Please ensure:
-- All tests pass
-- Code is well-documented
-- Changes are backward compatible
+## 📚 References
 
-## Citation
+- [AlphaStar: Mastering the Real-Time Strategy Game StarCraft II](https://deepmind.com/blog/article/alphastar-mastering-real-time-strategy-game-starcraft-ii)
+- [PySC2: StarCraft II Learning Environment](https://github.com/deepmind/pysc2)
 
-If you use this code in your research, please cite:
-
-```bibtex
-@misc{alphastar-pytorch,
-    author = {Your Name},
-    title = {AlphaStar PyTorch Implementation},
-    year = {2024},
-    publisher = {GitHub},
-    url = {https://github.com/yourusername/alphastar-pytorch}
-}
-```
-
-## License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-- DeepMind's AlphaStar team for their groundbreaking research
-- PyTorch team for the excellent deep learning framework
-- StarCraft II and PySC2 communities
-
-## Contact
-
-- Issues: Use GitHub Issues
-- Email: your.email@example.com
-- Twitter: @yourusername
-
-## Roadmap
-
-- [ ] Implement multi-agent training
-- [ ] Add more architectures
-- [ ] Improve documentation
-- [ ] Add visualization tools
-- [ ] Support for custom reward functions
