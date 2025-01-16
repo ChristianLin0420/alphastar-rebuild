@@ -1,7 +1,11 @@
-import torch
 import pytest
-from ..models.action_heads import (
-    ActionHeads, ActionTypeHead, PointerNetwork, SpatialActionHead
+import torch
+
+from models.modules.action_heads import (
+    ActionHeads,
+    ActionTypeHead,
+    PointerNetwork,
+    SpatialActionHead
 )
 
 def test_action_type_head():

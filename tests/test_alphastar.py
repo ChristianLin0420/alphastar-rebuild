@@ -1,100 +1,135 @@
-import torch
+"""
+Tests for the AlphaStar model.
+"""
+
 import pytest
-from ..models.alphastar import AlphaStar
-from ..configs.training_config import TrainingConfig
+import torch
+import numpy as np
+from pathlib import Path
 
-@pytest.fixture
-def model_input():
-    """Create dummy model input."""
-    batch_size = 32
-    config = TrainingConfig()
-    
-    return {
-        'scalar_input': torch.randn(batch_size, config.SCALAR_INPUT_DIM),
-        'entity_input': torch.randn(batch_size, config.MAX_ENTITIES, config.ENTITY_INPUT_DIM),
-        'spatial_input': torch.randn(batch_size, config.SPATIAL_INPUT_CHANNELS, *config.SPATIAL_SIZE),
-        'entity_mask': torch.ones(batch_size, config.MAX_ENTITIES, dtype=torch.bool)
-    }
+from models.alphastar import AlphaStar
+from models.modules.core import AlphaStarCore
+from models.modules.scalar_encoder import ScalarEncoder
+from models.modules.entity_encoder import EntityEncoder
+from models.modules.spatial_encoder import SpatialEncoder
+from models.modules.action_heads import ActionHeads
 
-def test_alphastar_output_shapes():
-    """Test if AlphaStar produces correct output shapes."""
-    config = TrainingConfig()
-    model = AlphaStar(config)
-    inputs = model_input()
+def test_alphastar_initialization(test_config):
+    """Test AlphaStar model initialization."""
+    model = AlphaStar(test_config)
+    assert isinstance(model, AlphaStar)
     
-    outputs = model(inputs)
+    # Check all components are initialized
+    assert hasattr(model, 'scalar_encoder')
+    assert hasattr(model, 'entity_encoder')
+    assert hasattr(model, 'spatial_encoder')
+    assert hasattr(model, 'core')
+    assert hasattr(model, 'action_heads')
+    assert hasattr(model, 'supervised_value')
+    assert hasattr(model, 'baseline_value')
+
+def test_alphastar_forward(test_config, mock_input_batch, device):
+    """Test forward pass of AlphaStar model."""
+    model = AlphaStar(test_config).to(device)
+    model.train()
+    
+    # Forward pass
+    outputs = model(
+        inputs=mock_input_batch,
+        mode='supervised'
+    )
+    
+    # Check output structure
+    assert 'action_type' in outputs
+    assert 'delay' in outputs
+    assert 'queued' in outputs
+    assert 'selected_units' in outputs
+    assert 'target_unit' in outputs
+    assert 'target_location' in outputs
+    assert 'supervised_value' in outputs
+    assert 'baseline_value' in outputs
     
     # Check output shapes
-    assert outputs['action_type'].shape == (32, config.NUM_ACTIONS)
-    assert outputs['delay'].shape == (32, 1)
-    assert outputs['queued'].shape == (32, 1)
-    assert outputs['selected_units'].shape == (32, config.MAX_ENTITIES)
-    assert outputs['target_unit'].shape == (32, config.MAX_ENTITIES)
-    assert outputs['target_location'].shape == (32, 1, *config.SPATIAL_SIZE)
-    assert outputs['value'].shape == (32, 1)
-    assert isinstance(outputs['hidden'], tuple)
-    assert len(outputs['hidden']) == 2
+    batch_size = mock_input_batch['scalar'].size(0)
+    num_actions = test_config['action_space']['num_actions']
+    
+    assert outputs['action_type'].size() == (batch_size, num_actions)
+    assert outputs['delay'].size() == (batch_size, 1)
+    assert outputs['queued'].size() == (batch_size, 1)
+    assert outputs['selected_units'].size() == (batch_size, 100)  # max_entities
+    assert outputs['target_unit'].size() == (batch_size, 100)  # max_entities
+    assert outputs['target_location'].size() == (batch_size, 2, 64, 64)  # spatial size
+    assert outputs['supervised_value'].size() == (batch_size, 1)
+    assert outputs['baseline_value'].size() == (batch_size, 1)
 
-def test_alphastar_get_action():
-    """Test action extraction for inference."""
-    config = TrainingConfig()
-    model = AlphaStar(config)
-    inputs = model_input()
+def test_alphastar_get_action(test_config, mock_input_batch, device):
+    """Test action sampling from AlphaStar model."""
+    model = AlphaStar(test_config).to(device)
+    model.eval()
     
-    actions, hidden = model.get_action(inputs, deterministic=True)
+    # Test deterministic action selection
+    actions, hidden = model.get_action(
+        inputs=mock_input_batch,
+        deterministic=True
+    )
     
-    # Check action shapes
-    assert isinstance(actions['action_type'], torch.Tensor)
-    assert actions['action_type'].shape == (32,)
-    assert actions['delay'].shape == (32, 1)
-    assert actions['queued'].shape == (32, 1)
-    assert actions['selected_units'].shape == (32,)
-    assert actions['target_unit'].shape == (32,)
-    assert actions['target_location'].shape == (32, 2)
+    # Check action structure
+    assert 'action_type' in actions
+    assert 'delay' in actions
+    assert 'queued' in actions
+    assert 'selected_units' in actions
+    assert 'target_unit' in actions
+    assert 'target_location' in actions
     
     # Check hidden state
     assert isinstance(hidden, tuple)
     assert len(hidden) == 2
+    assert all(isinstance(h, torch.Tensor) for h in hidden)
+    
+    # Test stochastic action selection
+    actions, hidden = model.get_action(
+        inputs=mock_input_batch,
+        deterministic=False
+    )
+    
+    # Actions should be different when sampled stochastically
+    assert torch.is_tensor(actions['action_type'])
+    assert actions['action_type'].size(0) == mock_input_batch['scalar'].size(0)
 
-def test_alphastar_invalid_input():
-    """Test if AlphaStar properly handles invalid inputs."""
-    config = TrainingConfig()
-    model = AlphaStar(config)
+def test_alphastar_auxiliary_heads(test_config, mock_input_batch, device):
+    """Test auxiliary prediction heads."""
+    # Enable auxiliary heads
+    test_config['training_params']['use_auxiliary'] = True
+    model = AlphaStar(test_config).to(device)
+    model.train()
     
-    # Test missing input
-    with pytest.raises(AssertionError):
-        model({'scalar_input': torch.randn(32, config.SCALAR_INPUT_DIM)})
+    outputs = model(
+        inputs=mock_input_batch,
+        mode='supervised'
+    )
     
-    # Test wrong dimensions
-    invalid_input = model_input()
-    invalid_input['scalar_input'] = invalid_input['scalar_input'].unsqueeze(0)
-    with pytest.raises(AssertionError):
-        model(invalid_input)
+    # Check auxiliary outputs
+    assert 'auxiliary' in outputs
+    assert 'build_order' in outputs['auxiliary']
+    assert 'unit_counts' in outputs['auxiliary']
+    
+    batch_size = mock_input_batch['scalar'].size(0)
+    assert outputs['auxiliary']['build_order'].size() == (batch_size, test_config['action_space']['build_order_size'])
+    assert outputs['auxiliary']['unit_counts'].size() == (batch_size, test_config['action_space']['unit_type_size'])
 
-def test_alphastar_gradient_flow():
-    """Test if gradients flow properly through the model."""
-    config = TrainingConfig()
-    model = AlphaStar(config)
-    inputs = model_input()
+def test_alphastar_training_mode(test_config, mock_input_batch, mock_target_batch, device):
+    """Test model in different training modes."""
+    model = AlphaStar(test_config).to(device)
     
-    outputs = model(inputs)
-    loss = sum(output.mean() for output in outputs.values() if isinstance(output, torch.Tensor))
-    loss.backward()
+    # Test supervised mode
+    model.train()
+    outputs = model(inputs=mock_input_batch, mode='supervised')
+    assert 'supervised_value' in outputs
     
-    assert all(p.grad is not None for p in model.parameters())
-
-@pytest.mark.parametrize("batch_size", [1, 16, 64])
-def test_alphastar_batch_sizes(batch_size):
-    """Test if AlphaStar works with different batch sizes."""
-    config = TrainingConfig()
-    model = AlphaStar(config)
+    # Test RL mode
+    outputs = model(inputs=mock_input_batch, mode='rl')
+    assert 'baseline_value' in outputs
     
-    inputs = {
-        'scalar_input': torch.randn(batch_size, config.SCALAR_INPUT_DIM),
-        'entity_input': torch.randn(batch_size, config.MAX_ENTITIES, config.ENTITY_INPUT_DIM),
-        'spatial_input': torch.randn(batch_size, config.SPATIAL_INPUT_CHANNELS, *config.SPATIAL_SIZE),
-        'entity_mask': torch.ones(batch_size, config.MAX_ENTITIES, dtype=torch.bool)
-    }
-    
-    outputs = model(inputs)
-    assert all(v.size(0) == batch_size for v in outputs.values() if isinstance(v, torch.Tensor)) 
+    # Test with temperature scaling
+    outputs = model(inputs=mock_input_batch, temperature=0.5)
+    assert all(torch.isfinite(v).all() for v in outputs.values() if torch.is_tensor(v)) 

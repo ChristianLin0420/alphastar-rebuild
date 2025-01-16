@@ -1,6 +1,7 @@
-import torch
 import pytest
-from ..models.entity_encoder import EntityEncoder, MultiHeadAttention
+import torch
+
+from models.modules.entity_encoder import EntityEncoder, MultiHeadAttention
 
 def test_entity_encoder_shapes():
     """Test if EntityEncoder produces correct output shapes."""

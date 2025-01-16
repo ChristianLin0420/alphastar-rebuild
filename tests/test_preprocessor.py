@@ -1,9 +1,10 @@
+import pytest
 import torch
 import numpy as np
-import pytest
+from pathlib import Path
 from unittest.mock import Mock
-from ..data.preprocessor import SC2Preprocessor
-from ..configs.training_config import TrainingConfig
+from data.preprocessor import SC2Preprocessor
+from configs.training_config import TrainingConfig
 
 class MockObs:
     """Mock SC2 observation for testing."""

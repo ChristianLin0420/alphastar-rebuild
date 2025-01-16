@@ -1,6 +1,7 @@
-import torch
 import pytest
-from ..models.spatial_encoder import SpatialEncoder, ResBlock
+import torch
+
+from models.modules.spatial_encoder import SpatialEncoder, ResBlock
 
 def test_spatial_encoder_shapes():
     """Test if SpatialEncoder produces correct output shapes."""

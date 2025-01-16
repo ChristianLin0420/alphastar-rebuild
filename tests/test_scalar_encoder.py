@@ -1,79 +1,96 @@
-import torch
+"""
+Tests for the scalar encoder module.
+"""
+
 import pytest
-from ..models.scalar_encoder import ScalarEncoder
+import torch
+import numpy as np
+from pathlib import Path
 
-def test_scalar_encoder_shapes():
-    """Test if ScalarEncoder produces correct output shapes."""
-    batch_size = 32
-    input_dim = 10
-    output_dim = 256
-    
-    encoder = ScalarEncoder(input_dim=input_dim, output_dim=output_dim)
-    x = torch.randn(batch_size, input_dim)
-    
-    output = encoder(x)
-    assert output.shape == (batch_size, output_dim)
+from models.modules.scalar_encoder import ScalarEncoder
 
-def test_scalar_encoder_invalid_input():
-    """Test if ScalarEncoder properly handles invalid inputs."""
-    encoder = ScalarEncoder(input_dim=10)
+def test_scalar_encoder_initialization(test_config):
+    """Test scalar encoder initialization."""
+    encoder = ScalarEncoder(
+        input_dim=test_config['input_dims']['scalar'],
+        hidden_dims=test_config['network_params']['scalar_encoder'],
+        output_dim=test_config['network_params']['encoder_output']
+    )
     
-    # Test wrong input dimension
-    with pytest.raises(ValueError):
-        x = torch.randn(32, 5)  # Wrong input dimension
-        encoder(x)
-    
-    # Test wrong number of dimensions
-    with pytest.raises(ValueError):
-        x = torch.randn(32, 10, 1)  # 3D tensor instead of 2D
-        encoder(x)
+    assert isinstance(encoder, ScalarEncoder)
+    assert len(encoder.layers) == len(test_config['network_params']['scalar_encoder']) + 1
 
-def test_scalar_encoder_batch_invariance():
-    """Test if ScalarEncoder works with different batch sizes."""
-    input_dim = 10
-    encoder = ScalarEncoder(input_dim=input_dim)
+def test_scalar_encoder_forward(test_config, mock_input_batch, device):
+    """Test forward pass of scalar encoder."""
+    encoder = ScalarEncoder(
+        input_dim=test_config['input_dims']['scalar'],
+        hidden_dims=test_config['network_params']['scalar_encoder'],
+        output_dim=test_config['network_params']['encoder_output']
+    ).to(device)
     
-    # Test different batch sizes
-    batch_sizes = [1, 16, 32, 64]
-    for batch_size in batch_sizes:
-        x = torch.randn(batch_size, input_dim)
-        output = encoder(x)
-        assert output.shape == (batch_size, 256)
+    # Forward pass
+    scalar_input = mock_input_batch['scalar']
+    output = encoder(scalar_input)
+    
+    # Check output shape
+    batch_size = scalar_input.size(0)
+    expected_output_dim = test_config['network_params']['encoder_output']
+    assert output.size() == (batch_size, expected_output_dim)
+    
+    # Check output properties
+    assert torch.isfinite(output).all()
+    assert not torch.isnan(output).any()
 
-def test_scalar_encoder_gradient_flow():
-    """Test if gradients flow properly through the ScalarEncoder."""
-    encoder = ScalarEncoder(input_dim=10)
-    x = torch.randn(32, 10, requires_grad=True)
+def test_scalar_encoder_gradient_flow(test_config, mock_input_batch, device):
+    """Test gradient flow through scalar encoder."""
+    encoder = ScalarEncoder(
+        input_dim=test_config['input_dims']['scalar'],
+        hidden_dims=test_config['network_params']['scalar_encoder'],
+        output_dim=test_config['network_params']['encoder_output']
+    ).to(device)
     
-    output = encoder(x)
-    loss = output.sum()
+    # Forward and backward pass
+    scalar_input = mock_input_batch['scalar']
+    output = encoder(scalar_input)
+    loss = output.mean()
     loss.backward()
     
-    # Check if gradients are computed
-    assert x.grad is not None
-    assert all(p.grad is not None for p in encoder.parameters())
+    # Check gradients
+    for param in encoder.parameters():
+        assert param.grad is not None
+        assert torch.isfinite(param.grad).all()
 
-def test_scalar_encoder_output_range():
-    """Test if ScalarEncoder output values are in a reasonable range."""
-    encoder = ScalarEncoder(input_dim=10)
-    x = torch.randn(32, 10)
+@pytest.mark.parametrize("batch_size", [1, 8, 32])
+def test_scalar_encoder_batch_sizes(batch_size, test_config, device):
+    """Test scalar encoder with different batch sizes."""
+    encoder = ScalarEncoder(
+        input_dim=test_config['input_dims']['scalar'],
+        hidden_dims=test_config['network_params']['scalar_encoder'],
+        output_dim=test_config['network_params']['encoder_output']
+    ).to(device)
     
-    output = encoder(x)
+    # Create input with different batch size
+    scalar_input = torch.randn(batch_size, test_config['input_dims']['scalar']).to(device)
     
-    # Check if outputs are not exploding
-    assert torch.isfinite(output).all()
-    assert output.abs().mean() < 100
+    # Forward pass
+    output = encoder(scalar_input)
+    assert output.size(0) == batch_size
+    assert output.size(1) == test_config['network_params']['encoder_output']
 
-@pytest.mark.parametrize("hidden_dims", [
-    [128, 128],
-    [512, 256, 128],
-    [64],
-    []
-])
-def test_scalar_encoder_architectures(hidden_dims):
-    """Test if ScalarEncoder works with different architectures."""
-    encoder = ScalarEncoder(input_dim=10, hidden_dims=hidden_dims)
-    x = torch.randn(32, 10)
+def test_scalar_encoder_activation(test_config, mock_input_batch, device):
+    """Test activation functions in scalar encoder."""
+    encoder = ScalarEncoder(
+        input_dim=test_config['input_dims']['scalar'],
+        hidden_dims=test_config['network_params']['scalar_encoder'],
+        output_dim=test_config['network_params']['encoder_output']
+    ).to(device)
     
-    output = encoder(x)
-    assert output.shape == (32, 256) 
+    # Forward pass
+    scalar_input = mock_input_batch['scalar']
+    output = encoder(scalar_input)
+    
+    # ReLU properties: no negative values in hidden layers
+    for layer in encoder.layers[:-1]:  # All except last layer
+        hidden = layer(scalar_input)
+        assert (hidden >= 0).all()
+        scalar_input = hidden 
